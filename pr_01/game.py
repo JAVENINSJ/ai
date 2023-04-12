@@ -6,6 +6,7 @@ import sys
 import json
 import timeit
 import math
+import time
 
 import tkinter as tk
 import numpy as np
@@ -24,9 +25,46 @@ class GameBoard:
         self.gameboard = None
         self.button_canvas = None
         self.line_set = None
+        self.tree = None
 
-        self.start_ui(size)
+        self.window = tk.Tk()
         self.reset(size)
+        self.full_tree = self.generate_gametree(
+            # filename = "gametree.json",
+            # depth=2
+        )
+        self.tree = self.full_tree
+        
+    def wait_move(self):
+        logging.debug("Waiting for move...")
+        if self.player_move == 2:
+            self.computer_move()
+        elif self.player_move == 1:
+            logging.info("Player move")
+
+    def computer_move(self):
+        if len(self.line_set) == 0:
+            return 
+         
+        for subtree in self.tree["trees"]:
+            if self.tree["trees"][subtree]["val"] == self.tree["val"]:
+                move = subtree.replace("(","").replace(")","").replace(" ","").split(",")
+                logging.info("Making move: %s", subtree)
+                self.player_move = self.make_move(
+                    board = self.gameboard,
+                    possible_lines = self.line_set,
+                    first_point = (int(move[0]), int(move[1])),
+                    second_point = (int(move[2]), int(move[3])),
+                    current_move = self.player_move,
+                    score = self.score
+                )
+                self.draw_line(
+                    self.button_canvas,
+                    (int(move[0]), int(move[1])),
+                    (int(move[2]), int(move[3]))
+                )
+                self.wait_move()
+                return
 
     def reset(self, size):
         """Function responsible for setting default values"""
@@ -35,6 +73,10 @@ class GameBoard:
 
         # Setup gameboard itself
         self.start_gameboard(size)
+
+        # Reset computer stuff
+        if self.tree is not None:
+            self.tree = self.full_tree
 
         # Setup player stuff
         self.player_move = None
@@ -90,30 +132,35 @@ class GameBoard:
 
     def draw_char(self, slot):
         """Function to draw a char"""
+        # (125, 130, 90, 95) 3x3
+
+        scales = (125, 130, 90, 95)
         if self.player_move == 2:
             self.button_canvas.create_text(
-                95+slot[1]*95,
-                60+slot[0]*72,
+                scales[0]+slot[1]*scales[1],
+                scales[2]+slot[0]*scales[3],
                 text="C"
             )
         else:
             self.button_canvas.create_text(
-                95+slot[1]*95,
-                60+slot[0]*72,
+                scales[0]+slot[1]*scales[1],
+                scales[2]+slot[0]*scales[3],
                 text="P"
             )
 
+    def draw_line(self, canvas, first_point, second_point):
+        """Function to draw a line between two points"""
+        # (63, 127, 47, 91) 3x3
+        scales = (63, 127, 47, 91)
+        canvas.create_line(
+            scales[0]+first_point[1]*scales[1], scales[2]+first_point[0]*scales[3],
+            scales[0]+second_point[1]*scales[1], scales[2]+second_point[0]*scales[3],
+            fill="red",
+            width="2"
+        )
+
     def display_game(self, first_move):
         """Function to display the gamescreen"""
-
-        def draw_line(canvas, first_point, second_point):
-            """Function to draw a line between two points"""
-            canvas.create_line(
-                47+first_point[1]*95, 25+first_point[0]*72,
-                47+second_point[1]*95, 25+second_point[0]*72,
-                fill="red",
-                width="2"
-            )
 
         def handle_button_click(event=None):
             if not event:
@@ -141,7 +188,6 @@ class GameBoard:
                         abs(self.selected_button[0] - y_location) +
                         abs(self.selected_button[1] - x_location)
                     ) == 1:
-                        # logging.info(button)
                         self.player_move = self.make_move(
                             board = self.gameboard,
                             possible_lines = self.line_set,
@@ -156,12 +202,13 @@ class GameBoard:
                         )[0].configure(
                             bg="#d9d9d9"
                         )
-                        draw_line(
+                        self.draw_line(
                             self.button_canvas,
                             self.selected_button,
                             (y_location, x_location)
                         )
                         self.selected_button = ()
+                        self.wait_move()
                     else:
                         logging.info("Invalid line")
 
@@ -229,19 +276,14 @@ class GameBoard:
         reset_btn = tk.Button(
             self.window_frame,
             text="Reset!",
-            command=self.reset
+            command=lambda: self.reset(self.boardsize)
         )
         reset_btn.grid(
             row=1,
             column=0
         )
-
         self.window_frame.pack()
-
-    def start_ui(self, size):
-        """Function to handle starting the UI"""
-        self.window = tk.Tk()
-        self.window.geometry(f"{size[1]}00x{size[0]+1}00")
+        self.wait_move()
 
     def print_to_terminal(self):
         """Function to display the gameboard"""
@@ -349,7 +391,6 @@ class GameBoard:
                         board[second_point[0]][second_point[1] + 1]
                     )[3] == "1" # 3 has line to 4
                 ):
-                    logging.info("1")
                     if not tree_generation:
                         self.draw_char(second_point)
                     points += 1
@@ -449,8 +490,7 @@ class GameBoard:
             (first_point, second_point) not in possible_lines and
             (second_point, first_point) not in possible_lines
         ):
-
-            logging.debug("Points already selected")
+            logging.debug("Points %s, %s already selected", first_point, second_point)
             return current_move
 
         add_line(first_point, second_point)
@@ -462,14 +502,20 @@ class GameBoard:
         else:
             score[current_move - 1] += points
 
+        if tree_generation == False:
+            if str((first_point, second_point)) in self.tree["trees"]:
+                self.tree = self.tree["trees"][str((first_point, second_point))]
+            if str((second_point, first_point)) in self.tree["trees"]:
+                self.tree = self.tree["trees"][str((second_point, first_point))]
+        
         # self.print_to_terminal()
+
         return current_move
 
     def generate_gametree(
         self,
         depth = -1,
-        skip_states = False,
-        filename = "gametree.json"
+        filename = ""
     ):
         """The recursive function for generating the gametree"""
 
@@ -486,11 +532,9 @@ class GameBoard:
                 return "Depth exceeded"
 
             state = f"l:{lines};s:{score};b:{board};m:{move}"
-            if skip_states:
-                if state in checked_states:
-                    return "Already checked"
-
-                checked_states.add(state)
+            
+            if state in checked_states:
+                return checked_states[state]
 
             gametree = {
                 "score": score,
@@ -498,8 +542,6 @@ class GameBoard:
                 "move": move,
                 "trees": {}
             }
-
-            tree_count = 0
 
             for line in lines:
 
@@ -533,27 +575,39 @@ class GameBoard:
                 )
 
                 gametree["trees"][str(line)] = game_subtree
+                
 
             if len(lines) == 0:
-                tree_count += 1
+                gametree["val"] = score[0] - score[1]
+                logging.debug("End score diff: %s", gametree["val"])
+            else:
+                gametree["val"] = None
+                for move_key in gametree["trees"]:
+                    if (
+                        gametree["val"] == None or
+                        (gametree["move"] == 1 and gametree["trees"][move_key]["val"] > gametree["val"]) or
+                        (gametree["move"] == 2 and gametree["trees"][move_key]["val"] < gametree["val"])
+                    ):
+                        gametree["val"] = gametree["trees"][move_key]["val"]                       
 
+            checked_states[state] = gametree
             return gametree
 
-        if skip_states:
-            checked_states = set()
+        max_moves = 2*self.boardsize[0]*self.boardsize[1]-self.boardsize[0]-self.boardsize[1]
+        checked_states = dict()
 
         if depth == -1:
             logging.info(
                 "Generating %s states",
                 math.factorial(
-                    2*self.boardsize[0]*self.boardsize[1]-self.boardsize[0]-self.boardsize[1]
+                    max_moves
                 )
             )
         else:
             variables = 1
             for number in range(
-                2*self.boardsize[0]*self.boardsize[1]-self.boardsize[0]-self.boardsize[1],
-                2*self.boardsize[0]*self.boardsize[1]-self.boardsize[0]-self.boardsize[1]-depth,
+                max_moves,
+                max_moves - depth,
                 -1
             ):
                 variables *= number
@@ -570,9 +624,12 @@ class GameBoard:
         stop = timeit.default_timer()
 
         logging.info("Tree created in %s seconds", stop - start)
-
-        with open(filename, "w", encoding="utf8") as write_file:
-            write_file.write(json.dumps(gametree, indent=4))
+        
+        if filename != "":
+            logging.info("Writing to '%s'...", filename)
+            with open(filename, "w", encoding="utf8") as write_file:
+                json.dump(gametree, write_file)
+            logging.info("Finished")    
 
         return gametree
 
@@ -586,11 +643,5 @@ if __name__ == "__main__":
     )
 
     instance = GameBoard((3, 3))
-
-    instance.generate_gametree(
-        filename = "gametree.json",
-        depth=6
-        # skip_states = True
-    )
 
     instance.window.mainloop()
